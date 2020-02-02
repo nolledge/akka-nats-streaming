@@ -71,7 +71,6 @@ sealed trait NatsStreamingSubscriptionSettings {
   def bufferSize: Int
   def autoRequeueTimeout: Option[Duration]
   def manualAcks: Boolean
-  def closeConnectionAfterStop: Boolean
   def subscriptionOptions: SubscriptionOptions = {
     val b = new SubscriptionOptions.Builder()
     val bMaxInFlight = subMaxInFlight.map(b.maxInFlight).getOrElse(b)
@@ -104,8 +103,7 @@ final case class SimpleSubscriptionSettings(
     subMaxInFlight: Option[Int],
     bufferSize: Int,
     autoRequeueTimeout: Option[Duration],
-    manualAcks: Boolean,
-    closeConnectionAfterStop: Boolean
+    manualAcks: Boolean
 ) extends NatsStreamingSubscriptionSettings
 
 case object SimpleSubscriptionSettings {
@@ -129,9 +127,7 @@ case object SimpleSubscriptionSettings {
         .getOrElse(NatsStreamingSubscriptionSettings.defaultBufferSize),
       autoRequeueTimeout =
         Try(config.getDuration("auto-requeue-timeout")).toOption,
-      manualAcks = Try(config.getBoolean("manual-acks")).getOrElse(true),
-      closeConnectionAfterStop =
-        Try(config.getBoolean("close-connection-after-stop")).getOrElse(true)
+      manualAcks = Try(config.getBoolean("manual-acks")).getOrElse(true)
     )
   def fromConfig(config: Config): SimpleSubscriptionSettings =
     fromConfig(config, NatsStreamingConnectionBuilder.fromConfig(config))
@@ -147,8 +143,7 @@ final case class SubscriptionWithAckSettings(
     manualAckTimeout: Duration,
     autoRequeueTimeout: Option[Duration],
     bufferSize: Int,
-    manualAcks: Boolean,
-    closeConnectionAfterStop: Boolean
+    manualAcks: Boolean
 ) extends NatsStreamingSubscriptionSettings
 
 case object SubscriptionWithAckSettings {
@@ -168,8 +163,7 @@ case object SubscriptionWithAckSettings {
       config.getDuration("manual-ack-timeout"),
       Some(config.getDuration("auto-requeue-timeout")),
       simple.bufferSize,
-      manualAcks = true,
-      simple.closeConnectionAfterStop
+      manualAcks = true
     )
   }
   def fromConfig(config: Config): SubscriptionWithAckSettings =
@@ -179,8 +173,7 @@ case object SubscriptionWithAckSettings {
 final case class PublishingSettings(
     cp: StreamingConnectionProvider,
     defaultSubject: String,
-    parallel: Boolean,
-    closeConnectionAfterStop: Boolean
+    parallel: Boolean
 )
 
 case object PublishingSettings {
@@ -188,8 +181,6 @@ case object PublishingSettings {
     PublishingSettings(
       cp = NatsStreamingConnectionBuilder.fromConfig(config),
       defaultSubject = config.getString("default-subject"),
-      parallel = config.getBoolean("parallel"),
-      closeConnectionAfterStop =
-        Try(config.getBoolean("close-connection-after-stop")).getOrElse(true)
+      parallel = config.getBoolean("parallel")
     )
 }

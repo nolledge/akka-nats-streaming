@@ -8,13 +8,18 @@ import akka.stream.alpakka.nats.{
 }
 import akka.stream.javadsl.Source
 import com.typesafe.config.Config
+import io.nats.streaming.StreamingConnection
 
 object NatsStreamingSimpleSource {
   def create(
+      connection: StreamingConnection,
       settings: SimpleSubscriptionSettings
   ): Source[IncomingMessage[Array[Byte]], NotUsed] =
-    Source.fromGraph(new NatsStreamingSimpleSourceStage(settings))
+    Source.fromGraph(new NatsStreamingSimpleSourceStage(connection, settings))
 
-  def create(config: Config): Source[IncomingMessage[Array[Byte]], NotUsed] =
-    create(SimpleSubscriptionSettings.fromConfig(config))
+  def create(
+      connection: StreamingConnection,
+      config: Config
+  ): Source[IncomingMessage[Array[Byte]], NotUsed] =
+    create(connection, SimpleSubscriptionSettings.fromConfig(config))
 }

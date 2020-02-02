@@ -8,15 +8,20 @@ import akka.stream.alpakka.nats.{
 }
 import akka.stream.javadsl.Sink
 import com.typesafe.config.Config
+import io.nats.streaming.StreamingConnection
 
 import scala.concurrent.Future
 
 object NatsStreamingSimpleSink {
   def create(
+      connection: StreamingConnection,
       settings: PublishingSettings
   ): Sink[OutgoingMessage[Array[Byte]], Future[Done]] =
-    Sink.fromGraph(new NatsStreamingSimpleSinkStage(settings))
+    Sink.fromGraph(new NatsStreamingSimpleSinkStage(connection, settings))
 
-  def create(config: Config): Sink[OutgoingMessage[Array[Byte]], Future[Done]] =
-    create(PublishingSettings.fromConfig(config))
+  def create(
+      connection: StreamingConnection,
+      config: Config
+  ): Sink[OutgoingMessage[Array[Byte]], Future[Done]] =
+    create(connection, PublishingSettings.fromConfig(config))
 }
