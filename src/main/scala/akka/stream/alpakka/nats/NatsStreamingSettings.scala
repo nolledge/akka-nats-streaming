@@ -62,7 +62,6 @@ case object NatsStreamingConnectionSettings {
 }
 
 sealed trait NatsStreamingSubscriptionSettings {
-  def cp: StreamingConnectionProvider
   def subjects: List[String]
   def subscriptionQueue: String
   def durableSubscriptionName: Option[String]
@@ -95,7 +94,6 @@ case object NatsStreamingSubscriptionSettings {
 }
 
 final case class SimpleSubscriptionSettings(
-    cp: StreamingConnectionProvider,
     subjects: List[String],
     subscriptionQueue: String,
     durableSubscriptionName: Option[String],
@@ -108,11 +106,9 @@ final case class SimpleSubscriptionSettings(
 
 case object SimpleSubscriptionSettings {
   def fromConfig(
-      config: Config,
-      connectionProvider: StreamingConnectionProvider
+      config: Config
   ): SimpleSubscriptionSettings =
     SimpleSubscriptionSettings(
-      cp = connectionProvider,
       subjects = Try(config.getStringList("subjects").asScala.toList)
         .orElse(Try(config.getString("subjects").split(',').map(_.trim).toList))
         .orElse(Try(config.getStringList("subject").asScala.toList))
@@ -129,12 +125,9 @@ case object SimpleSubscriptionSettings {
         Try(config.getDuration("auto-requeue-timeout")).toOption,
       manualAcks = Try(config.getBoolean("manual-acks")).getOrElse(true)
     )
-  def fromConfig(config: Config): SimpleSubscriptionSettings =
-    fromConfig(config, NatsStreamingConnectionBuilder.fromConfig(config))
 }
 
 final case class SubscriptionWithAckSettings(
-    cp: StreamingConnectionProvider,
     subjects: List[String],
     subscriptionQueue: String,
     durableSubscriptionName: Option[String],
@@ -148,30 +141,25 @@ final case class SubscriptionWithAckSettings(
 
 case object SubscriptionWithAckSettings {
   def fromConfig(
-      config: Config,
-      connectionProvider: StreamingConnectionProvider
+      config: Config
   ): SubscriptionWithAckSettings = {
     val simple =
-      SimpleSubscriptionSettings.fromConfig(config, connectionProvider)
+      SimpleSubscriptionSettings.fromConfig(config)
     SubscriptionWithAckSettings(
-      simple.cp,
-      simple.subjects,
-      simple.subscriptionQueue,
-      simple.durableSubscriptionName,
-      simple.startPosition,
-      simple.subMaxInFlight,
-      config.getDuration("manual-ack-timeout"),
-      Some(config.getDuration("auto-requeue-timeout")),
-      simple.bufferSize,
+      subjects = simple.subjects,
+      subscriptionQueue = simple.subscriptionQueue,
+      durableSubscriptionName = simple.durableSubscriptionName,
+      startPosition = simple.startPosition,
+      subMaxInFlight = simple.subMaxInFlight,
+      manualAckTimeout = config.getDuration("manual-ack-timeout"),
+      autoRequeueTimeout = Some(config.getDuration("auto-requeue-timeout")),
+      bufferSize = simple.bufferSize,
       manualAcks = true
     )
   }
-  def fromConfig(config: Config): SubscriptionWithAckSettings =
-    fromConfig(config, NatsStreamingConnectionBuilder.fromConfig(config))
 }
 
 final case class PublishingSettings(
-    cp: StreamingConnectionProvider,
     defaultSubject: String,
     parallel: Boolean
 )
@@ -179,7 +167,6 @@ final case class PublishingSettings(
 case object PublishingSettings {
   def fromConfig(config: Config): PublishingSettings =
     PublishingSettings(
-      cp = NatsStreamingConnectionBuilder.fromConfig(config),
       defaultSubject = config.getString("default-subject"),
       parallel = config.getBoolean("parallel")
     )
