@@ -6,9 +6,9 @@ import java.util.UUID
 import scala.concurrent.duration._
 import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
-import akka.stream.alpakka.nats.scaladsl.NatsStreamingSimpleSource
 import akka.stream.alpakka.nats.scaladsl.NatsStreamingSimpleSink
 import akka.stream.Materializer
+import akka.stream.alpakka.nats.scaladsl.NatsStreamingSourceWithAck
 import akka.stream.scaladsl.{Sink, Source}
 import io.nats.client.{Connection, ConnectionListener, Consumer, ErrorListener}
 import io.nats.streaming.StreamingConnection
@@ -65,19 +65,21 @@ class NatsFlowTest
   def source(
       subject: String,
       durable: Boolean = false
-  ): Source[IncomingMessage[Array[Byte]], NotUsed] = NatsStreamingSimpleSource(
-    connection,
-    SimpleSubscriptionSettings(
-      subjects = List(subject),
-      subscriptionQueue = "testQueue",
-      durableSubscriptionName = if (durable) Some("durable") else None,
-      startPosition = DeliveryStartPosition.AllAvailable,
-      subMaxInFlight = None,
-      bufferSize = 100,
-      autoRequeueTimeout = Some(Duration.ofSeconds(1)),
-      manualAcks = false
+  ): Source[IncomingMessageWithAck[Array[Byte]], NotUsed] =
+    NatsStreamingSourceWithAck(
+      connection,
+      SubscriptionWithAckSettings(
+        subjects = List(subject),
+        subscriptionQueue = "testQueue",
+        durableSubscriptionName = if (durable) Some("durable") else None,
+        startPosition = DeliveryStartPosition.AllAvailable,
+        subMaxInFlight = None,
+        bufferSize = 100,
+        autoRequeueTimeout = Some(Duration.ofSeconds(1)),
+        manualAcks = true,
+        manualAckTimeout = Duration.ofSeconds(1)
+      )
     )
-  )
 
   def sink(subject: String): Sink[OutgoingMessage[Array[Byte]], Future[Done]] =
     NatsStreamingSimpleSink(
@@ -101,7 +103,7 @@ class NatsFlowTest
       val result = for {
         _ <- Source(List(testData))
           .map(serialize)
-          .map(d => OutgoingMessage(d))
+          .map(d => OutgoingMessage(d, sub))
           .runWith(sink(sub))
         res <- source(sub)
           .map[TestStructure](d => deserialize(d.data))
@@ -114,15 +116,17 @@ class NatsFlowTest
     "resume a durable connection" in {
       val sub = subject
       val result = for {
-        _ <- Source(List.fill(10)(testData))
+        _ <- Source(1.to(10).map(i => TestStructure(i.toString)))
           .map(serialize)
-          .map(d => OutgoingMessage(d))
+          .map(d => OutgoingMessage(d, sub))
           .runWith(sink(sub))
         first <- source(sub, durable = true)
-          .map[TestStructure](d => deserialize(d.data))
           .take(5)
+          .wireTap(_.ack())
+          .map[TestStructure](d => deserialize(d.data))
           .runWith(Sink.seq[TestStructure])
         res <- source(sub, durable = true)
+          .wireTap(_.ack())
           .map[TestStructure](d => deserialize(d.data))
           .takeWithin(1.second)
           .runWith(Sink.seq[TestStructure])

@@ -9,7 +9,7 @@ import scala.concurrent.{Future, Promise}
 import scala.util.control.NonFatal
 
 private[nats] abstract class NatsStreamingSinkStageLogic[
-    T <: NatsStreamingOutgoing[Array[Byte]]
+    T <: NatsStreamingMessage[Array[Byte]]
 ](
     connection: StreamingConnection,
     settings: PublishingSettings,
@@ -66,7 +66,7 @@ private[nats] abstract class NatsStreamingSinkStageLogic[
       override def onPush(): Unit = {
         val m = grab(in)
         connection
-          .publish(m.subject.getOrElse(settings.defaultSubject), m.data, ah(m))
+          .publish(m.subject, m.data, ah(m))
         if (settings.parallel) pull(in) else ()
       }
     }

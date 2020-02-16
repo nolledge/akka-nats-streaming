@@ -1,35 +1,28 @@
 package akka.stream.alpakka.nats
 
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentLinkedQueue
 
-import akka.Done
-import akka.stream.impl.Buffer
 import akka.stream.stage._
 import akka.stream.{Attributes, Outlet, SourceShape}
 import io.nats.streaming.{Message, MessageHandler, StreamingConnection}
 
-import scala.concurrent.Promise
-import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
 
-private[nats] abstract class NatsStreamingSourceStageLogic[
-    T1 <: NatsStreamingSubscriptionSettings,
-    T2 <: NatsStreamingIncoming[Array[Byte]]
-](
+private[nats] abstract class NatsStreamingSourceStageLogic[T](
     connection: StreamingConnection,
-    settings: T1,
-    shape: SourceShape[T2],
-    out: Outlet[T2]
+    settings: NatsStreamingSubscriptionSettings,
+    shape: SourceShape[T],
+    out: Outlet[T]
 ) extends GraphStageLogic(shape)
     with OutHandler
     with StageLogging {
+
   private final var downstreamWaiting = false
   private final var subscriptions: Seq[io.nats.streaming.Subscription] =
     Seq.empty
-  protected final var buffer: Buffer[T2] = _
+
+  val messageQueue = new ConcurrentLinkedQueue[T]()
   protected final var processingLogic: AsyncCallback[Unit] = _
-  protected final val scheduled =
-    new java.util.concurrent.atomic.AtomicBoolean(false)
   protected val messageHandler: MessageHandler
 
   private final def handleFailure(e: Throwable): Unit = {
@@ -37,22 +30,22 @@ private[nats] abstract class NatsStreamingSourceStageLogic[
     failStage(e)
   }
 
+  private def push(e: T): Unit = {
+    downstreamWaiting = false
+    log.debug("Pushing message {}", e)
+    push(out, e)
+  }
+
   private final def process(u: Unit): Unit = {
-    if (!scheduled.compareAndSet(true, false))
-      throw new IllegalStateException("Code should never reach here")
-    if (downstreamWaiting && (!buffer.isEmpty)) {
-      val e = buffer.dequeue()
-      if (null != e) {
-        downstreamWaiting = false
-        push(out, e)
-      }
+    if (downstreamWaiting) {
+      Option(messageQueue.poll()).foreach(push)
     }
     u
   }
 
   override def preStart(): Unit =
     try {
-      buffer = Buffer[T2](settings.bufferSize, settings.bufferSize)
+      log.debug("Initializing source")
       processingLogic = getAsyncCallback(process)
       subscriptions = settings.subjects.map { s =>
         connection.subscribe(
@@ -62,8 +55,7 @@ private[nats] abstract class NatsStreamingSourceStageLogic[
           settings.subscriptionOptions
         )
       }
-      if (scheduled.compareAndSet(false, true)) processingLogic.invoke(())
-      log.debug("Nats connection initiated")
+      processingLogic.invoke(())
       super.preStart()
     } catch {
       case NonFatal(e) =>
@@ -72,6 +64,7 @@ private[nats] abstract class NatsStreamingSourceStageLogic[
 
   override def postStop(): Unit = {
     try {
+      log.debug("Stopping source. Closing subscriptions.")
       subscriptions.foreach(_.close())
     } catch {
       case NonFatal(e) =>
@@ -80,17 +73,18 @@ private[nats] abstract class NatsStreamingSourceStageLogic[
     super.postStop()
   }
 
-  override def onPull(): Unit =
-    if (buffer.isEmpty) {
+  override def onPull(): Unit = {
+    log.debug("Downstream in demand trying to push element")
+    if (messageQueue.isEmpty) {
       downstreamWaiting = true
     } else {
-      val e = buffer.dequeue()
-      if (null == e) {
-        downstreamWaiting = true
-      } else {
-        push(out, e)
-      }
+      Option(messageQueue.poll())
+        .fold {
+          downstreamWaiting = true
+        }(push)
     }
+  }
+
   setHandler(out, this)
 }
 
@@ -101,9 +95,9 @@ private[nats] class NatsStreamingSimpleSourceStageLogic(
     out: Outlet[IncomingMessage[Array[Byte]]]
 ) extends NatsStreamingSourceStageLogic(connection, settings, shape, out) {
   val messageHandler: MessageHandler = (msg: Message) => {
-    buffer.enqueue(IncomingMessage(msg.getData, Option(msg.getSubject)))
+    messageQueue.offer(IncomingMessage(msg.getData, msg.getSubject))
     if (settings.manualAcks) msg.ack()
-    if (scheduled.compareAndSet(false, true)) processingLogic.invoke(())
+    processingLogic.invoke(())
   }
 }
 
@@ -114,26 +108,17 @@ private[nats] class NatsStreamingSourceWithAckStageLogic(
     out: Outlet[IncomingMessageWithAck[Array[Byte]]]
 ) extends NatsStreamingSourceStageLogic(connection, settings, shape, out) {
   val messageHandler: MessageHandler = (msg: Message) => {
-    val promise = Promise[Done]()
-    buffer.enqueue(
-      IncomingMessageWithAck(msg.getData, Option(msg.getSubject), promise)
+    log.debug(
+      "Incoming message with id {}. Putting into queue.",
+      msg.getSequence
     )
-    if (scheduled.compareAndSet(false, true)) processingLogic.invoke(())
-    val cancelable = materializer.scheduleOnce(
-      FiniteDuration(settings.manualAckTimeout.toNanos, TimeUnit.NANOSECONDS),
-      () => {
-        promise.tryFailure(
-          new Exception(
-            s"Didn't process message during ${settings.manualAckTimeout}"
-          )
-        )
-        ()
-      }
+    if (msg.isRedelivered) {
+      log.warning("message {} has been redelivered", msg)
+    }
+    messageQueue.offer(
+      IncomingMessageWithAck(msg.getData, msg.getSubject, msg.ack)
     )
-    promise.future.foreach { _ =>
-      msg.ack()
-      cancelable.cancel()
-    }(materializer.executionContext)
+    processingLogic.invoke(())
   }
 }
 
