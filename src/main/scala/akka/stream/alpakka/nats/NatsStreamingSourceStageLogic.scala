@@ -17,6 +17,7 @@ private[nats] abstract class NatsStreamingSourceStageLogic[T](
     with OutHandler
     with StageLogging {
 
+  protected final var unackedMsg = 0
   private final var downstreamWaiting = false
   private final var subscriptions: Seq[io.nats.streaming.Subscription] =
     Seq.empty
@@ -32,6 +33,7 @@ private[nats] abstract class NatsStreamingSourceStageLogic[T](
 
   private def push(e: T): Unit = {
     downstreamWaiting = false
+    unackedMsg += 1
     log.debug("Pushing message {}", e)
     push(out, e)
   }
@@ -84,6 +86,13 @@ private[nats] abstract class NatsStreamingSourceStageLogic[T](
         }(push)
     }
   }
+  override def onDownstreamFinish(cause: Throwable): Unit = {
+    if (unackedMsg == 0) super.onDownstreamFinish(cause)
+    else {
+      setKeepGoing(true)
+      log.debug("Awaiting {} acks before finishing.", unackedMsg)
+    }
+  }
 
   setHandler(out, this)
 }
@@ -107,6 +116,12 @@ private[nats] class NatsStreamingSourceWithAckStageLogic(
     shape: SourceShape[IncomingMessageWithAck[Array[Byte]]],
     out: Outlet[IncomingMessageWithAck[Array[Byte]]]
 ) extends NatsStreamingSourceStageLogic(connection, settings, shape, out) {
+  val ackCallaback = getAsyncCallback[Message] { msg =>
+    log.debug("Message {} ackknowledged", msg.getSequence)
+    msg.ack()
+    unackedMsg -= 1
+    if (unackedMsg == 0 && isClosed(out)) completeStage()
+  }
   val messageHandler: MessageHandler = (msg: Message) => {
     log.debug(
       "Incoming message with id {}. Putting into queue.",
@@ -115,9 +130,8 @@ private[nats] class NatsStreamingSourceWithAckStageLogic(
     if (msg.isRedelivered) {
       log.warning("message {} has been redelivered", msg)
     }
-    messageQueue.offer(
-      IncomingMessageWithAck(msg.getData, msg.getSubject, msg.ack)
-    )
+    def ack(): Unit = ackCallaback.invoke(msg)
+    messageQueue.offer(IncomingMessageWithAck(msg.getData, msg.getSubject, ack))
     processingLogic.invoke(())
   }
 }
