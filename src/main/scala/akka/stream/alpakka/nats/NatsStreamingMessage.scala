@@ -9,19 +9,30 @@ sealed trait NatsStreamingMessage[D] {
   def subject: String
 }
 
-case class IncomingMessage[T](data: T, subject: String)
-    extends NatsStreamingMessage[T]
+case class IncomingMessage[D](
+    data: D,
+    seqNumber: Long,
+    isRedelivered: Boolean,
+    subject: String
+) extends NatsStreamingMessage[D]
 
-case class IncomingMessageWithAck[T](data: T, subject: String, ack: () => Unit)
-    extends NatsStreamingMessage[T]
+case class IncomingMessageWithAck[D](
+    data: D,
+    seqNumber: Long,
+    isRedelivered: Boolean,
+    subject: String,
+    ack: () => Unit
+) extends NatsStreamingMessage[D]
 
 object IncomingMessageWithAck {
   private[nats] def apply[T](
       data: T,
+      seqNumber: Long,
+      isRedelivered: Boolean,
       subject: String,
       ack: () => Unit
   ): IncomingMessageWithAck[T] =
-    new IncomingMessageWithAck(data, subject, ack)
+    new IncomingMessageWithAck(data, seqNumber, isRedelivered, subject, ack)
 }
 
 case class OutgoingMessage[T](data: T, subject: String)

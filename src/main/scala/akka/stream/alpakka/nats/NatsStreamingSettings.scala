@@ -54,7 +54,8 @@ case object NatsStreamingConnectionSettings {
       clientId = config.getString("client-id"),
       url = Try(config.getString("url"))
         .getOrElse(url(config.getString("host"), config.getInt("port"))),
-      connectionTimeout = Try(config.getDuration("connection-timeout")).toOption,
+      connectionTimeout =
+        Try(config.getDuration("connection-timeout")).toOption,
       publishAckTimeout = Try(config.getDuration("pub-ack-timeout")).toOption,
       publishMaxInFlight = Try(config.getInt("pub-max-in-flight")).toOption,
       discoverPrefix = Try(config.getString("discover-prefix")).toOption
@@ -118,7 +119,8 @@ case object SimpleSubscriptionSettings {
         Try(config.getString("durable-subscription-name")).toOption,
       startPosition = Try(DeliveryStartPosition.fromConfig(config))
         .getOrElse(DeliveryStartPosition.OnlyNew),
-      subMaxInFlight = Try(config.getInt("subscription-max-in-flight")).toOption,
+      subMaxInFlight =
+        Try(config.getInt("subscription-max-in-flight")).toOption,
       bufferSize = Try(config.getInt("buffer-size"))
         .getOrElse(NatsStreamingSubscriptionSettings.defaultBufferSize),
       autoRequeueTimeout =

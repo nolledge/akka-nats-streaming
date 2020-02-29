@@ -97,8 +97,8 @@ class NatsFlowTest
 
   val testData = TestStructure("some data")
 
-  "An emitted event" must {
-    "be received by the source" in {
+  "An event" must {
+    "be published by the sink and received by the source" in {
       val sub = subject
       val result = for {
         _ <- Source(List(testData))
@@ -109,10 +109,10 @@ class NatsFlowTest
           .map[TestStructure](d => deserialize(d.data))
           .runWith(Sink.head[TestStructure])
       } yield res
-      whenReady(result) { r =>
-        r mustBe testData
-      }
+      whenReady(result) { r => r mustBe testData }
     }
+  }
+  "The NatsSource" must {
     "resume a durable connection" in {
       val sub = subject
       val result = for {
@@ -133,9 +133,7 @@ class NatsFlowTest
         _ = println(first)
         _ = println(res)
       } yield res
-      whenReady(result) { r =>
-        r.size mustBe 5
-      }
+      whenReady(result) { r => r.size mustBe 5 }
     }
   }
 

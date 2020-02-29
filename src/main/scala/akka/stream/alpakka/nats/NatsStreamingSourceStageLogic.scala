@@ -104,7 +104,14 @@ private[nats] class NatsStreamingSimpleSourceStageLogic(
     out: Outlet[IncomingMessage[Array[Byte]]]
 ) extends NatsStreamingSourceStageLogic(connection, settings, shape, out) {
   val messageHandler: MessageHandler = (msg: Message) => {
-    messageQueue.offer(IncomingMessage(msg.getData, msg.getSubject))
+    messageQueue.offer(
+      IncomingMessage(
+        data = msg.getData,
+        seqNumber = msg.getSequence,
+        isRedelivered = msg.isRedelivered,
+        subject = msg.getSubject
+      )
+    )
     if (settings.manualAcks) msg.ack()
     processingLogic.invoke(())
   }
@@ -131,7 +138,15 @@ private[nats] class NatsStreamingSourceWithAckStageLogic(
       log.warning("message {} has been redelivered", msg)
     }
     def ack(): Unit = ackCallaback.invoke(msg)
-    messageQueue.offer(IncomingMessageWithAck(msg.getData, msg.getSubject, ack))
+    messageQueue.offer(
+      IncomingMessageWithAck(
+        data = msg.getData,
+        seqNumber = msg.getSequence,
+        isRedelivered = msg.isRedelivered,
+        subject = msg.getSubject,
+        ack = ack
+      )
+    )
     processingLogic.invoke(())
   }
 }
