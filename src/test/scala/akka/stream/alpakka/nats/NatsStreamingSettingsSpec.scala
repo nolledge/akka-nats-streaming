@@ -27,16 +27,17 @@ class NatsStreamingSettingsSpec extends AnyWordSpec with Matchers {
     publishMaxInFlight = publishMaxInFlight,
     discoverPrefix = discoverPrefix
   )
+  val connectionConf = ConfigFactory.parseResources("connection.conf")
 
   "NatsStreamingSettings" should {
     "be loaded from config as expected" in {
       NatsStreamingConnectionSettings.fromConfig(
-        ConfigFactory.parseResources("connection.conf")
+        connectionConf.getConfig("connection-url")
       ) shouldBe connectionSettings
     }
     "be loaded from config as expected with host and port configured" in {
       NatsStreamingConnectionSettings.fromConfig(
-        ConfigFactory.parseResources("connection_host_port.conf")
+        connectionConf.getConfig("connection-host-port")
       ) shouldBe connectionSettings.copy(url = urlHostPort)
     }
   }
