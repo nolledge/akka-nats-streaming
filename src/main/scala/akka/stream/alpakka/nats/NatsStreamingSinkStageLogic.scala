@@ -88,8 +88,9 @@ private[nats] class NatsStreamingSimpleSinkStageLogic(
     ) {
   def ah(m: OutgoingMessage[Array[Byte]]): AckHandler =
     (nuid: String, ex: Exception) =>
-      if (Option(ex).isDefined) failureCallback.invoke(ex)
-      else successCallback.invoke(nuid)
+      Option(ex).fold(successCallback.invoke(nuid))(e =>
+        failureCallback.invoke(e)
+      )
 }
 
 private[nats] class NatsStreamingSinkWithCompletionStageLogic(

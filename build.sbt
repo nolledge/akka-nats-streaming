@@ -14,3 +14,7 @@ libraryDependencies ++= Seq(
   "org.mockito" % "mockito-core" % "3.1.0" % Test,
   "org.scalatestplus" %% "mockito-1-10" % "3.1.0.0" % Test
 )
+
+Test / parallelExecution := false
+
+coverageExcludedPackages := "akka\\.stream\\.alpakka\\.nats\\.javadsl.*"

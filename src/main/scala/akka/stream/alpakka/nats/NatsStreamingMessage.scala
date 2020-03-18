@@ -14,7 +14,9 @@ case class IncomingMessage[D](
     seqNumber: Long,
     isRedelivered: Boolean,
     subject: String
-) extends NatsStreamingMessage[D]
+) extends NatsStreamingMessage[D] {
+  def map[R](f: D => R): IncomingMessage[R] = this.copy(data = f(data))
+}
 
 case class IncomingMessageWithAck[D](
     data: D,
@@ -22,7 +24,9 @@ case class IncomingMessageWithAck[D](
     isRedelivered: Boolean,
     subject: String,
     ack: () => Unit
-) extends NatsStreamingMessage[D]
+) extends NatsStreamingMessage[D] {
+  def map[R](f: D => R): IncomingMessageWithAck[R] = this.copy(data = f(data))
+}
 
 object IncomingMessageWithAck {
   private[nats] def apply[T](
